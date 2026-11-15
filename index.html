@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Smart Home - Global Cloud Control (GitHub)</title>
+  <script src="https://unpkg.com/mqtt@5.3.5/dist/mqtt.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body {
+      background: radial-gradient(circle at top, #0b132b, #030712);
+      color: #f8fafc;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px 16px;
+    }
+    .header { text-align: center; margin-bottom: 24px; max-width: 440px; width: 100%; }
+    .header h1 { font-size: 26px; font-weight: 800; color: #38bdf8; text-shadow: 0 0 20px rgba(56, 189, 248, 0.4); }
+    .header p { font-size: 13px; color: #94a3b8; margin-top: 6px; }
+    
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 16px;
+      border-radius: 50px;
+      font-size: 12px;
+      font-weight: 700;
+      margin-top: 10px;
+      transition: all 0.3s;
+    }
+    .status-badge.online {
+      background: rgba(34, 197, 94, 0.15);
+      color: #4ade80;
+      border: 1px solid rgba(34, 197, 94, 0.4);
+      box-shadow: 0 0 15px rgba(34, 197, 94, 0.2);
+    }
+    .status-badge.offline {
+      background: rgba(239, 68, 68, 0.15);
+      color: #f87171;
+      border: 1px solid rgba(239, 68, 68, 0.4);
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+    .status-badge.online .status-dot {
+      animation: pulse 1.5s infinite;
+    }
+    @keyframes pulse {
+      0% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.8); }
+      100% { opacity: 1; transform: scale(1); }
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 14px;
+      width: 100%;
+      max-width: 440px;
+      margin-bottom: 20px;
+    }
+    .device-card {
+      background: rgba(17, 24, 39, 0.85);
+      border: 2px solid #1f2937;
+      border-radius: 20px;
+      padding: 18px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      transition: all 0.3s ease;
+      backdrop-filter: blur(10px);
+    }
+    .device-card.active {
+      border-color: #22c55e;
+      box-shadow: 0 0 25px rgba(34, 197, 94, 0.25);
+      background: rgba(17, 24, 39, 0.95);
+    }
+    .d-info { display: flex; align-items: center; gap: 14px; }
+    .d-icon { font-size: 38px; }
+    .d-name { font-size: 18px; font-weight: 700; color: #f1f5f9; }
+    .d-status { font-size: 12px; color: #94a3b8; margin-top: 3px; }
+    .d-status.on { color: #4ade80; font-weight: 700; }
+
+    .toggle-btn {
+      padding: 12px 24px;
+      border-radius: 50px;
+      font-weight: 800;
+      font-size: 14px;
+      border: none;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .toggle-btn.btn-off { background: #374151; color: #d1d5db; }
+    .toggle-btn.btn-on {
+      background: linear-gradient(135deg, #22c55e, #16a34a);
+      color: white;
+      box-shadow: 0 4px 15px rgba(34, 197, 94, 0.4);
+    }
+
+    .master-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      width: 100%;
+      max-width: 440px;
+      margin-bottom: 20px;
+    }
+    .master-btn {
+      padding: 16px;
+      border-radius: 16px;
+      font-weight: 800;
+      font-size: 15px;
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: all 0.2s;
+    }
+    .m-all-on { background: #166534; color: #86efac; border: 1px solid #22c55e; }
+    .m-all-off { background: #7f1d1d; color: #fca5a5; border: 1px solid #ef4444; }
+    .master-btn:active { transform: scale(0.97); }
+
+    .voice-box {
+      background: rgba(17, 24, 39, 0.85);
+      border: 1px solid #1f2937;
+      border-radius: 20px;
+      padding: 20px;
+      width: 100%;
+      max-width: 440px;
+      text-align: center;
+      backdrop-filter: blur(10px);
+    }
+    .mic-btn {
+      background: linear-gradient(135deg, #0284c7, #2563eb);
+      color: white;
+      border: none;
+      padding: 14px 28px;
+      border-radius: 50px;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      box-shadow: 0 8px 20px rgba(2, 132, 199, 0.4);
+      transition: all 0.2s;
+    }
+    .mic-btn.active {
+      background: linear-gradient(135deg, #ef4444, #dc2626);
+      animation: pulse 1s infinite;
+    }
+    .voice-msg { margin-top: 14px; font-size: 13px; color: #38bdf8; min-height: 20px; font-weight: 600; }
+    .hints { font-size: 11px; color: #64748b; margin-top: 10px; line-height: 1.5; }
+    
+    .footer {
+      margin-top: 24px;
+      text-align: center;
+      font-size: 11px;
+      color: #64748b;
+    }
+    .footer a { color: #38bdf8; text-decoration: none; font-weight: 600; }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <h1>🏠 Smart Home Cloud</h1>
+    <p>Global 3-Device Control • Hosted on GitHub</p>
+    <div class="status-badge offline" id="statusBadge">
+      <div class="status-dot"></div>
+      <span id="statusText">CONNECTING TO CLOUD...</span>
+    </div>
+  </div>
+
+  <div class="grid">
+    <!-- Bulb Card -->
+    <div class="device-card" id="cardBulb">
+      <div class="d-info">
+        <div class="d-icon">💡</div>
+        <div>
+          <div class="d-name">Bulb (Light)</div>
+          <div class="d-status" id="statusBulb">OFF</div>
+        </div>
+      </div>
+      <button class="toggle-btn btn-off" id="btnBulb" onclick="toggleDevice('bulb')">OFF</button>
+    </div>
+
+    <!-- Fan Card -->
+    <div class="device-card" id="cardFan">
+      <div class="d-info">
+        <div class="d-icon">🌀</div>
+        <div>
+          <div class="d-name">Ceiling Fan</div>
+          <div class="d-status" id="statusFan">OFF</div>
+        </div>
+      </div>
+      <button class="toggle-btn btn-off" id="btnFan" onclick="toggleDevice('fan')">OFF</button>
+    </div>
+
+    <!-- TV Card -->
+    <div class="device-card" id="cardTV">
+      <div class="d-info">
+        <div class="d-icon">📺</div>
+        <div>
+          <div class="d-name">Television</div>
+          <div class="d-status" id="statusTV">OFF</div>
+        </div>
+      </div>
+      <button class="toggle-btn btn-off" id="btnTV" onclick="toggleDevice('tv')">OFF</button>
+    </div>
+  </div>
+
+  <div class="master-row">
+    <button class="master-btn m-all-on" onclick="sendCmd('all:on')">⚡ ALL ON</button>
+    <button class="master-btn m-all-off" onclick="sendCmd('all:off')">💤 ALL OFF</button>
+  </div>
+
+  <div class="voice-box">
+    <button class="mic-btn" id="micBtn" onclick="toggleVoice()">
+      🎤 Voice AI Control
+    </button>
+    <div class="voice-msg" id="voiceMsg">Mic dabayein aur boliye: "Bulb on karo"</div>
+    <div class="hints">
+      Bol sakte hain: "Bulb chalu karo" • "Garmi lag rahi hai fan chalao" • "TV on karo" • "Sab band karo"
+    </div>
+  </div>
+
+  <div class="footer">
+    Kahin se bhi control karein (4G / 5G / WiFi)<br>
+    Powered by <strong>HiveMQ Cloud MQTT</strong> & <strong>GitHub Pages</strong>
+  </div>
+
+  <script>
+    // MQTT Cloud Configuration
+    const TOPIC_CMD    = "shivam_home_iot_123/cmd";
+    const TOPIC_STATE  = "shivam_home_iot_123/state";
+    const TOPIC_STATUS = "shivam_home_iot_123/status";
+
+    let state = { bulb: false, fan: false, tv: false };
+    let client = null;
+    let recognition = null;
+    let isListening = false;
+    let lastHeartbeat = 0;
+
+    function renderUI() {
+      // Bulb
+      document.getElementById('cardBulb').className = 'device-card' + (state.bulb ? ' active' : '');
+      document.getElementById('statusBulb').innerText = state.bulb ? 'RUNNING (ON)' : 'OFF';
+      document.getElementById('statusBulb').className = 'd-status' + (state.bulb ? ' on' : '');
+      document.getElementById('btnBulb').innerText = state.bulb ? 'ON' : 'OFF';
+      document.getElementById('btnBulb').className = 'toggle-btn ' + (state.bulb ? 'btn-on' : 'btn-off');
+
+      // Fan
+      document.getElementById('cardFan').className = 'device-card' + (state.fan ? ' active' : '');
+      document.getElementById('statusFan').innerText = state.fan ? 'RUNNING (ON)' : 'OFF';
+      document.getElementById('statusFan').className = 'd-status' + (state.fan ? ' on' : '');
+      document.getElementById('btnFan').innerText = state.fan ? 'ON' : 'OFF';
+      document.getElementById('btnFan').className = 'toggle-btn ' + (state.fan ? 'btn-on' : 'btn-off');
+
+      // TV
+      document.getElementById('cardTV').className = 'device-card' + (state.tv ? ' active' : '');
+      document.getElementById('statusTV').innerText = state.tv ? 'RUNNING (ON)' : 'OFF';
+      document.getElementById('statusTV').className = 'd-status' + (state.tv ? ' on' : '');
+      document.getElementById('btnTV').innerText = state.tv ? 'ON' : 'OFF';
+      document.getElementById('btnTV').className = 'toggle-btn ' + (state.tv ? 'btn-on' : 'btn-off');
+    }
+
+    function setOnlineStatus(isOnline) {
+      const badge = document.getElementById('statusBadge');
+      const text = document.getElementById('statusText');
+      if (isOnline) {
+        badge.className = 'status-badge online';
+        text.innerText = 'ESP8266 ONLINE (CLOUD CONNECTED)';
+      } else {
+        badge.className = 'status-badge offline';
+        text.innerText = 'ESP8266 OFFLINE (WAITING FOR ESP)';
+      }
+    }
+
+    function speak(text) {
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+        const u = new SpeechSynthesisUtterance(text);
+        u.lang = 'hi-IN';
+        window.speechSynthesis.speak(u);
+      }
+    }
+
+    function connectMQTT() {
+      const clientId = 'web_' + Math.random().toString(16).substring(2, 10);
+      client = mqtt.connect('wss://broker.hivemq.com:8884/mqtt', {
+        clientId: clientId,
+        clean: true,
+        reconnectPeriod: 2000
+      });
+
+      client.on('connect', () => {
+        console.log('Connected to MQTT Cloud Broker!');
+        client.subscribe([TOPIC_STATE, TOPIC_STATUS]);
+        // Ask ESP for initial state
+        client.publish(TOPIC_CMD, "query:status");
+      });
+
+      client.on('message', (topic, message) => {
+        const payload = message.toString();
+        console.log('MQTT Message:', topic, payload);
+
+        if (topic === TOPIC_STATUS) {
+          if (payload === 'online') {
+            setOnlineStatus(true);
+            lastHeartbeat = Date.now();
+          } else if (payload === 'offline') {
+            setOnlineStatus(false);
+          }
+        }
+        else if (topic === TOPIC_STATE) {
+          try {
+            const data = JSON.parse(payload);
+            state.bulb = !!data.bulb;
+            state.fan = !!data.fan;
+            state.tv = !!data.tv;
+            renderUI();
+            setOnlineStatus(true);
+            lastHeartbeat = Date.now();
+          } catch (e) {}
+        }
+      });
+
+      client.on('error', (err) => {
+        console.error('MQTT Error:', err);
+      });
+    }
+
+    function sendCmd(cmd) {
+      if (client && client.connected) {
+        client.publish(TOPIC_CMD, cmd);
+      }
+    }
+
+    function toggleDevice(dev) {
+      const next = !state[dev];
+      sendCmd(dev + ':' + (next ? 'on' : 'off'));
+    }
+
+    // Voice Recognition AI
+    function processVoicePrompt(p) {
+      p = p.toLowerCase();
+      document.getElementById('voiceMsg').innerText = '🗣️ "' + p + '"';
+
+      const isOff = (p.includes('off') || p.includes('band') || p.includes('stop') || p.includes('bujha') || p.includes('sleep') || p.includes('so'));
+      const isOn = !isOff;
+
+      if (p.includes('sab') || p.includes('all')) {
+        sendCmd(isOn ? 'all:on' : 'all:off');
+        speak(isOn ? 'Sabhi devices on ho gaye hain' : 'Sabhi devices band kar diye gaye hain');
+      }
+      else if (p.includes('bulb') || p.includes('light') || p.includes('roshni') || p.includes('andhera')) {
+        const target = p.includes('andhera') ? true : isOn;
+        sendCmd('bulb:' + (target ? 'on' : 'off'));
+        speak(target ? 'Bulb jala diya gaya hai' : 'Bulb band kar diya gaya hai');
+      }
+      else if (p.includes('fan') || p.includes('pankha') || p.includes('garmi') || p.includes('hawa')) {
+        const target = p.includes('garmi') ? true : isOn;
+        sendCmd('fan:' + (target ? 'on' : 'off'));
+        speak(target ? 'Fan chalu kar diya gaya hai' : 'Fan band kar diya gaya hai');
+      }
+      else if (p.includes('tv') || p.includes('television') || p.includes('movie') || p.includes('match')) {
+        sendCmd('tv:' + (isOn ? 'on' : 'off'));
+        speak(isOn ? 'TV on kar diya gaya hai' : 'TV band kar diya gaya hai');
+      } else {
+        document.getElementById('voiceMsg').innerText = 'Samajh nahi aaya, kripya Bulb, Fan ya TV ka naam lein';
+        speak('Samajh nahi aaya, kripya Bulb, Fan ya TV ka naam lein');
+      }
+    }
+
+    function initVoice() {
+      const S = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!S) return;
+      recognition = new S();
+      recognition.continuous = false;
+      recognition.lang = 'hi-IN';
+
+      recognition.onstart = () => {
+        isListening = true;
+        document.getElementById('micBtn').classList.add('active');
+        document.getElementById('micBtn').innerText = '🔴 Sun raha hoon...';
+      };
+      recognition.onend = () => {
+        isListening = false;
+        document.getElementById('micBtn').classList.remove('active');
+        document.getElementById('micBtn').innerText = '🎤 Voice AI Control';
+      };
+      recognition.onresult = (e) => {
+        const text = e.results[0][0].transcript;
+        processVoicePrompt(text);
+      };
+    }
+
+    function toggleVoice() {
+      if (!recognition) initVoice();
+      if (!isListening) { recognition.start(); }
+    }
+
+    window.onload = () => {
+      connectMQTT();
+      initVoice();
+      // Watchdog: If no message/heartbeat in 15 seconds, mark offline
+      setInterval(() => {
+        if (Date.now() - lastHeartbeat > 15000) {
+          setOnlineStatus(false);
+        }
+      }, 5000);
+    };
+  </script>
+</body>
+</html>
